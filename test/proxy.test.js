@@ -114,3 +114,25 @@ test('HLS playlist segments and key URI are rewritten through the proxy', async 
   const seg1 = proxy.lookup(lines[5].slice('/proxy/'.length))
   assert.equal(seg1.url, 'http://other/seg1.ts')
 })
+
+test('upstream RST mid-body after headers were sent does not crash the process (ERR_HTTP_HEADERS_SENT regression)', async () => {
+  const rst = http.createServer((req, res) => {
+    res.writeHead(206, { 'content-type': 'video/mp4', 'content-range': 'bytes 0-9999999/10000000', 'content-length': 10000000 })
+    res.write(Buffer.alloc(65536))
+    setTimeout(() => (req.socket.resetAndDestroy ? req.socket.resetAndDestroy() : req.socket.destroy()), 150)
+  })
+  await new Promise(r => rst.listen(0, '127.0.0.1', r))
+  let crashed = null
+  const onErr = e => { crashed = e }
+  process.on('uncaughtException', onErr)
+  const id = proxy.register(`http://127.0.0.1:${rst.address().port}/v`)
+  await new Promise(resolve => {
+    const r = http.get(frontBase + id, { headers: { range: 'bytes=0-' } }, res => { res.on('data', () => {}); res.on('error', () => {}); res.on('close', () => setTimeout(resolve, 200)) })
+    r.on('error', () => {})
+  })
+  process.removeListener('uncaughtException', onErr)
+  assert.equal(crashed, null, 'uncaught: ' + (crashed && crashed.code))
+  const ok = await get(frontBase + proxy.register(cdnBase + '/video'), { range: 'bytes=0-9' })
+  assert.equal(ok.status, 206, 'proxy still alive')
+  rst.closeAllConnections && rst.closeAllConnections(); rst.close()
+})

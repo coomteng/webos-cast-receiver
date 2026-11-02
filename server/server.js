@@ -194,6 +194,10 @@ function createApp({ config } = {}) {
 }
 
 function main() {
+  // A stray socket error must not take the renderer down (SSDP presence,
+  // GENA subscriptions and the TV channel would all vanish with it).
+  process.on('uncaughtException', e => console.error(new Date().toISOString(), '[fatal-ish] uncaught:', e && e.stack || e))
+  process.on('unhandledRejection', e => console.error(new Date().toISOString(), '[fatal-ish] unhandled rejection:', e && e.stack || e))
   const app = createApp()
   const { cfg } = app
   const server = http.createServer(app.handler)

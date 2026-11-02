@@ -71,14 +71,19 @@ function createProxy({ userAgent, mode = 'always', log } = {}) {
       if ([301, 302, 303, 307, 308].includes(st) && res.headers.location && hops < MAX_REDIRECTS) {
         res.resume()
         let next
-        try { next = new URL(res.headers.location, url).toString() } catch (e) { return cb(new Error('bad redirect')) }
+        try { next = new URL(res.headers.location, url).toString() } catch (e) { return once(new Error('bad redirect')) }
         logf('redirect', st, '->', next.slice(0, 120))
-        return fetchUpstream(next, method, headers, referer, hops + 1, cb)
+        return fetchUpstream(next, method, headers, referer, hops + 1, once)
       }
-      cb(null, res, url)
+      once(null, res, url)
     })
+    // cb must fire at most once: after the response has been handed over, a
+    // late socket error (client went away, CDN reset) must not reach the
+    // caller again — it already wrote its headers.
+    let done = false
+    const once = (...a) => { if (done) return; done = true; cb(...a) }
     req.on('timeout', () => req.destroy(new Error('upstream timeout')))
-    req.on('error', cb)
+    req.on('error', once)
     req.end()
     return req
   }
@@ -109,9 +114,10 @@ function createProxy({ userAgent, mode = 'always', log } = {}) {
     req.on('close', () => { closed = true; if (upstreamReq) upstreamReq.destroy() })
 
     upstreamReq = fetchUpstream(entry.url, method, fwd, entry.referer, 0, (err, up, finalUrl) => {
-      if (closed) { if (up) up.resume(); return }
+      if (closed || res.destroyed) { if (up) up.resume(); return }
       if (err) {
         logf('upstream error', entry.url.slice(0, 100), err.message)
+        if (res.headersSent) return res.destroy()
         res.writeHead(502, { 'content-type': 'text/plain' })
         return res.end('upstream: ' + err.message)
       }
@@ -139,10 +145,12 @@ function createProxy({ userAgent, mode = 'always', log } = {}) {
         return
       }
       if (!out['content-type']) out['content-type'] = 'video/mp4'
+      if (res.headersSent) return up.resume()
       res.writeHead(up.statusCode, out)
       if (method === 'HEAD') { up.resume(); return res.end() }
       up.pipe(res)
-      up.on('error', () => res.destroy())
+      up.on('error', e => { logf('upstream stream error', e.message); res.destroy() })
+      res.on('error', () => up.destroy())
     })
   }
 
