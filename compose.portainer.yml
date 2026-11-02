@@ -1,0 +1,27 @@
+# Portainer stack: cast-receiver (host network, :8790).
+#
+# Portainer → Stacks → Add stack → Repository
+#   Repository URL : https://github.com/coomteng/webos-cast-receiver
+#   Compose path   : compose.portainer.yml
+#   Env vars       : FRIENDLY_NAME / BIND_ADDR / PROXY_MODE (defaults below)
+# Before first deploy on the Docker host:  mkdir -p /srv/cast-receiver/data
+services:
+  cast-receiver:
+    build: .
+    pull_policy: build
+    image: webos-cast-receiver:local
+    container_name: cast-receiver
+    restart: unless-stopped
+    # MUST be host networking: SSDP (UDP 1900 multicast) does not cross the
+    # Docker bridge; the phone would never see the device.
+    network_mode: host
+    volumes:
+      - "${CAST_DATA_DIR:-/srv/cast-receiver/data}:/app/data"
+    environment:
+      FRIENDLY_NAME: ${FRIENDLY_NAME:-客厅电视}
+      PORT: "8790"
+      # Pin the LAN interface on multi-NIC hosts (also the IP advertised to phones/TV):
+      BIND_ADDR: ${BIND_ADDR:-}
+      # always | https-only | off  — relay media through the server (default: always)
+      PROXY_MODE: ${PROXY_MODE:-always}
+      TZ: Europe/Zurich
