@@ -168,6 +168,7 @@ class Renderer extends EventEmitter {
     if (!isFinite(seconds) || seconds < 0) throw new UpnpError(711, 'illegal seek target')
     if (this.state === 'NO_MEDIA_PRESENT') throw new UpnpError(701, 'no media')
     this._requireTv()
+    if (this.duration > 0) seconds = Math.min(seconds, this.duration)
     this._pos = seconds
     this._posAt = this.now()
     this.tv.send({ cmd: 'seek', loadId: this.loadId, position: seconds })

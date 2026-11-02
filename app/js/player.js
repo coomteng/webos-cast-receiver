@@ -77,12 +77,19 @@ var Player = (function () {
   /* ---- video events ---- */
   video.addEventListener('loadstart', function () { report('loading'); });
   video.addEventListener('loadedmetadata', function () { report(null); updateOsd(); });
-  video.addEventListener('playing', function () { clearStall(); showLoading(false); showIdle(false); report('playing'); showOsd(3000); });
+  video.addEventListener('playing', function () { if (waitTimer) { clearTimeout(waitTimer); waitTimer = null; } clearStall(); showLoading(false); showIdle(false); report('playing'); showOsd(3000); });
   video.addEventListener('play', function () { report(video.readyState >= 3 ? 'playing' : 'loading'); });
   /* readyState < 2 = the element never had data: that pause is the tail of a failed load, not the user. */
   video.addEventListener('pause', function () { if (!video.ended && !terminal && current && video.readyState >= 2) { report('paused'); showOsd(0); } });
-  video.addEventListener('waiting', function () { if (current) { showLoading(true, '缓冲中…'); report('loading'); } });
-  video.addEventListener('canplay', function () { showLoading(false); });
+  /* webOS fires 'waiting' liberally (seeks, tiny stalls). Only call it buffering if no
+     progress for 1.5 s; a 'playing' event in between cancels it. */
+  var waitTimer = null;
+  video.addEventListener('waiting', function () {
+    if (!current) return;
+    if (waitTimer) clearTimeout(waitTimer);
+    waitTimer = setTimeout(function () { waitTimer = null; if (current && video.readyState < 3) { showLoading(true, '缓冲中…'); report('loading'); } }, 1500);
+  });
+  video.addEventListener('canplay', function () { if (waitTimer) { clearTimeout(waitTimer); waitTimer = null; } showLoading(false); });
   video.addEventListener('timeupdate', function () { if (!osd.classList.contains('hidden')) updateOsd(); });
   video.addEventListener('ended', function () {
     clearStall();
@@ -169,6 +176,8 @@ var Player = (function () {
 
   function seek(sec) {
     if (!current) return;
+    var d = video.duration;
+    if (isFinite(d) && d > 0) sec = Math.min(sec, Math.max(0, d - 0.5));
     try { video.currentTime = Math.max(0, sec); } catch (e) { /* not seekable yet */ }
     showOsd(3000);
   }
