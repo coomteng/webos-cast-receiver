@@ -72,3 +72,12 @@ html, body {
   background: rgba(22,25,35,0.95); border: 2px solid #343947; color: #e8e8ec; font-size: 30px;
 }
 #toast.err { border-color: #e53935; color: #ff8a80; }
+
+/* ------------------------------------------------------------ unmute banner (browser screens) */
+#unmute {
+  position: absolute; top: 40px; left: 50%; margin-left: -520px; width: 1040px;
+  padding: 22px 30px; border-radius: 18px; text-align: center;
+  background: rgba(250,215,120,0.95); color: #1a1400; font-size: 34px; font-weight: bold;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.5); cursor: pointer;
+}
+#unmute .ico { margin-right: 14px; }

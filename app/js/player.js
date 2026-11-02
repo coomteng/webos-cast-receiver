@@ -154,8 +154,8 @@ var Player = (function () {
           video.muted = true;
           var p2 = video.play();
           if (p2 && p2['catch']) p2['catch'](function () {});
-          App.toast('浏览器静音播放中，点击页面开启声音');
           needsUnmute = true;
+          App.showUnmute(true);
         }
       });
     }
@@ -187,6 +187,7 @@ var Player = (function () {
     try { video.pause(); } catch (e) { /* ignore */ }
     video.removeAttribute('src');
     try { video.load(); } catch (e2) { /* ignore */ }
+    if (needsUnmute) { needsUnmute = false; App.showUnmute(false); }
     showIdle(true);
     if (had && !silent) report('stopped');
   }
@@ -203,18 +204,29 @@ var Player = (function () {
 
   function togglePlay() {
     if (!current) return;
-    if (needsUnmute) { needsUnmute = false; video.muted = false; App.toast('已开启声音'); if (video.paused) play(); return; }
+    if (needsUnmute) { unmute(); return; }
     if (video.paused) play(); else pause();
   }
 
   function setVolume(v) { video.volume = Math.max(0, Math.min(1, v / 100)); }
   function setMute(m) { video.muted = !!m; }
 
+  /* Called from a real user gesture (click / key): lift the browser autoplay mute. */
+  function unmute() {
+    if (!needsUnmute) return false;
+    needsUnmute = false;
+    video.muted = false;
+    App.showUnmute(false);
+    App.toast('已开启声音');
+    if (video.paused && current) play();
+    return true;
+  }
+
   /* Another screen (the TV) took over: drop whatever we are showing, silently. */
   function standby() { stop(true); }
 
   return {
-    standby: standby,
+    standby: standby, unmute: unmute, needsUnmute: function () { return needsUnmute; },
     load: load, play: play, pause: pause, stop: stop, seek: seek, seekBy: seekBy, togglePlay: togglePlay,
     setVolume: setVolume, setMute: setMute, showOsd: showOsd,
     isActive: function () { return !!current; },

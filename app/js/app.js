@@ -19,6 +19,9 @@ var App = (function () {
 
   function log(msg) { try { console.log('[cast] ' + msg); } catch (e) { /* ignore */ } }
 
+  var unmuteEl = document.getElementById('unmute');
+  function showUnmute(on) { if (on) unmuteEl.classList.remove('hidden'); else unmuteEl.classList.add('hidden'); }
+
   function toast(msg, isErr) {
     toastEl.textContent = msg;
     toastEl.className = isErr ? 'err' : '';
@@ -108,6 +111,8 @@ var App = (function () {
   /* ---- remote control ---- */
   document.addEventListener('keydown', function (e) {
     var code = e.keyCode || e.which;
+    /* Any key is a user gesture: lift the browser autoplay mute first. */
+    if (Player.needsUnmute() && (code === 13 || code === 32 || code === 415)) { Player.unmute(); e.preventDefault(); return; }
     var handled = true;
     switch (code) {
       case 13:  /* OK */
@@ -132,7 +137,7 @@ var App = (function () {
   });
 
   /* Magic Remote pointer: click toggles play/pause; moving the pointer shows the OSD. */
-  document.addEventListener('click', function () { if (Player.isActive()) Player.togglePlay(); });
+  document.addEventListener('click', function () { if (Player.unmute()) return; if (Player.isActive()) Player.togglePlay(); });
   var moveT = 0;
   document.addEventListener('mousemove', function () {
     var t = Date.now();
@@ -169,5 +174,5 @@ var App = (function () {
   loop();
   Player.report();
 
-  return { toast: toast, log: log };
+  return { toast: toast, log: log, showUnmute: showUnmute };
 })();
