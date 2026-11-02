@@ -1,0 +1,8 @@
+dist/
+data/
+local.env
+TODO.md
+node_modules/
+*.png
+!app/icon.png
+!app/largeIcon.png
