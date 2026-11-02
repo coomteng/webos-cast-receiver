@@ -1,6 +1,6 @@
 {
   "name": "webos-cast-receiver",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Zero-dependency DLNA MediaRenderer that relays casts (Douyin TV button etc.) to an LG webOS TV app",
   "scripts": {
