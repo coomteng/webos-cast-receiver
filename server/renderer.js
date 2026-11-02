@@ -239,7 +239,21 @@ class Renderer extends EventEmitter {
     }
   }
 
-  // TV went away (poll timeout) — whatever it was doing is no longer true.
+  // The active screen changed (TV appeared / browser took over). If we had
+  // something going, push it to the new screen and resume near the old
+  // position; the new screen's reports then take over.
+  onScreenChanged() {
+    if (!this.uri || !this.tv || !this.tv.isOnline()) return
+    if (this.state === 'NO_MEDIA_PRESENT') return
+    const resumeAt = this.position()
+    const shouldPlay = this.state === 'PLAYING' || this.state === 'TRANSITIONING'
+    const paused = this.state === 'PAUSED_PLAYBACK'
+    if (!shouldPlay && !paused) return // STOPPED: nothing to hand over
+    this.tv.send({ cmd: 'load', loadId: this.loadId, url: this.playableUri, title: this.title, autoplay: shouldPlay, startAt: resumeAt })
+    if (shouldPlay) this._setState('TRANSITIONING')
+  }
+
+  // Active screen went away (poll timeout) — whatever it was doing is no longer true.
   onTvOffline() {
     if (this.state === 'PLAYING' || this.state === 'TRANSITIONING' || this.state === 'PAUSED_PLAYBACK') {
       this._setState('STOPPED')

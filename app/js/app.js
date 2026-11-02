@@ -26,10 +26,16 @@ var App = (function () {
     toastTimer = setTimeout(function () { toastEl.classList.add('hidden'); }, 3000);
   }
 
+  var isActive = false;
   function setConnected(on, why) {
     connected = on;
-    if (on) { idleDot.classList.add('on'); idleHint.textContent = '等待投屏'; }
+    if (on) { idleDot.classList.add('on'); refreshHint(); }
     else { idleDot.classList.remove('on'); idleHint.textContent = why || '接收服务未连接'; }
+  }
+  function refreshHint() {
+    if (!connected) return;
+    if (isActive) idleHint.textContent = API.role === 'web' ? '等待投屏（电视未连接，由此浏览器播放）' : '等待投屏';
+    else idleHint.textContent = API.role === 'web' ? '待机：电视在线，投屏会在电视上播放' : '待机：另一块屏幕正在接收';
   }
 
   /* ---- reports: coalesce to at most one POST in flight, keep latest ---- */
@@ -64,6 +70,8 @@ var App = (function () {
       case 'seek': Player.seek(cmd.position || 0); break;
       case 'volume': Player.setVolume(cmd.volume); break;
       case 'mute': Player.setMute(cmd.mute); break;
+      case 'active': isActive = true; refreshHint(); break;
+      case 'standby': isActive = false; Player.standby(); refreshHint(); break;
       default: log('unknown cmd ' + cmd.cmd);
     }
   }
@@ -74,6 +82,7 @@ var App = (function () {
       if (!connected) setConnected(true);
       var cmds = (res && res.commands) || [];
       for (var i = 0; i < cmds.length; i++) handle(cmds[i]);
+      if (res && typeof res.active === 'boolean' && res.active !== isActive) { isActive = res.active; if (!isActive) Player.standby(); refreshHint(); }
       if (res && res.replaced) { log('poll replaced by another client'); }
       setTimeout(loop, 0);
     }, function (e) {
@@ -144,6 +153,18 @@ var App = (function () {
   // webOS: when the app is relaunched / regains visibility, nudge a report.
   document.addEventListener('visibilitychange', function () { if (!document.hidden) Player.report(); });
 
+  if (API.role === 'web') {
+    document.title = '投屏接收 — 浏览器屏幕';
+    /* Pressing keys on a 1920x1080 page in a browser: fit it to the window. */
+    var fit = function () {
+      var s = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+      document.body.style.transformOrigin = '0 0';
+      document.body.style.transform = 'scale(' + s + ')';
+      document.documentElement.style.background = '#000';
+      document.documentElement.style.overflow = 'hidden';
+    };
+    window.addEventListener('resize', fit); fit();
+  }
   fetchInfo();
   loop();
   Player.report();

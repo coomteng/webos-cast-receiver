@@ -22,6 +22,7 @@ var Player = (function () {
   var terminal = false;   // set after ended/error so the trailing pause event is ignored
   var stallTimer = null;
   var retried = false;
+  var needsUnmute = false;
 
   function fmt(sec) {
     if (!isFinite(sec) || sec < 0) sec = 0;
@@ -138,9 +139,25 @@ var Player = (function () {
     video.src = cmd.url;
     video.load();
     report('loading');
+    if (cmd.startAt && cmd.startAt > 1) {
+      var startAt = cmd.startAt;
+      var onMeta = function () { video.removeEventListener('loadedmetadata', onMeta); try { video.currentTime = startAt; } catch (e) { /* ignore */ } };
+      video.addEventListener('loadedmetadata', onMeta);
+    }
     if (cmd.autoplay !== false) {
       var p = video.play();
-      if (p && p['catch']) p['catch'](function (e) { App.log('play() rejected: ' + e); });
+      if (p && p['catch']) p['catch'](function (e) {
+        App.log('play() rejected: ' + e);
+        /* Browser autoplay policy (no user gesture yet): fall back to muted
+           autoplay and let the user click to unmute, so the clip at least shows. */
+        if (API.role === 'web' && !video.muted) {
+          video.muted = true;
+          var p2 = video.play();
+          if (p2 && p2['catch']) p2['catch'](function () {});
+          App.toast('浏览器静音播放中，点击页面开启声音');
+          needsUnmute = true;
+        }
+      });
     }
     // Watchdog: if nothing starts within 20 s, report an error so the phone
     // is not stuck in TRANSITIONING.
@@ -184,12 +201,20 @@ var Player = (function () {
 
   function seekBy(delta) { if (current) seek((video.currentTime || 0) + delta); }
 
-  function togglePlay() { if (!current) return; if (video.paused) play(); else pause(); }
+  function togglePlay() {
+    if (!current) return;
+    if (needsUnmute) { needsUnmute = false; video.muted = false; App.toast('已开启声音'); if (video.paused) play(); return; }
+    if (video.paused) play(); else pause();
+  }
 
   function setVolume(v) { video.volume = Math.max(0, Math.min(1, v / 100)); }
   function setMute(m) { video.muted = !!m; }
 
+  /* Another screen (the TV) took over: drop whatever we are showing, silently. */
+  function standby() { stop(true); }
+
   return {
+    standby: standby,
     load: load, play: play, pause: pause, stop: stop, seek: seek, seekBy: seekBy, togglePlay: togglePlay,
     setVolume: setVolume, setMute: setMute, showOsd: showOsd,
     isActive: function () { return !!current; },

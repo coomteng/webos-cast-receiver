@@ -82,8 +82,8 @@ test('full cast flow: TV polls, phone sets URI, TV gets load, reports, phone see
   assert.match(sub.headers.sid, /^uuid:/)
 
   // TV comes online: a poll parks
-  const pollP = req('GET', '/tv/poll?after=0')
-  await tvPost({ name: 'LG', state: 'idle' })
+  const pollP = req('GET', '/tv/poll?client=tv1&role=tv&after=0')
+  await tvPost({ client: 'tv1', role: 'tv', name: 'LG', state: 'idle' })
   const st = JSON.parse((await req('GET', '/status')).text)
   assert.equal(st.tv.online, true)
 
@@ -91,10 +91,14 @@ test('full cast flow: TV polls, phone sets URI, TV gets load, reports, phone see
   const set = await soap('avt', 'SetAVTransportURI', '<CurrentURI>http://cdn/a.mp4</CurrentURI><CurrentURIMetaData>&lt;DIDL-Lite&gt;&lt;item&gt;&lt;dc:title&gt;hi&lt;/dc:title&gt;&lt;/item&gt;&lt;/DIDL-Lite&gt;</CurrentURIMetaData>')
   assert.equal(set.status, 200)
   const poll = JSON.parse((await pollP).text)
-  assert.equal(poll.commands.length, 1)
-  assert.equal(poll.commands[0].cmd, 'load')
-  assert.equal(poll.commands[0].url, 'http://cdn/a.mp4', 'proxy off -> raw url')
-  assert.equal(poll.commands[0].title, 'hi')
+  // first poll answers immediately with 'active'; the load lands in the next one
+  assert.deepEqual(poll.commands.map(c => c.cmd), ['active'])
+  const pollL = JSON.parse((await req('GET', `/tv/poll?client=tv1&role=tv&after=${poll.commands[0].seq}`)).text)
+  assert.equal(pollL.commands.length, 1)
+  assert.equal(pollL.commands[0].cmd, 'load')
+  assert.equal(pollL.commands[0].url, 'http://cdn/a.mp4', 'proxy off -> raw url')
+  assert.equal(pollL.commands[0].title, 'hi')
+  poll.commands = pollL.commands
   const ti = await soap('avt', 'GetTransportInfo')
   assert.match(ti.text, /TRANSITIONING/)
 
@@ -102,26 +106,26 @@ test('full cast flow: TV polls, phone sets URI, TV gets load, reports, phone see
   assert.equal((await soap('avt', 'Play', '<Speed>1</Speed>')).status, 200)
 
   // TV reports playing
-  await tvPost({ loadId: poll.commands[0].loadId, state: 'playing', position: 2, duration: 15 })
+  await tvPost({ client: 'tv1', role: 'tv', loadId: poll.commands[0].loadId, state: 'playing', position: 2, duration: 15 })
   const pi = await soap('avt', 'GetPositionInfo')
   assert.match(pi.text, /<TrackDuration>0:00:15<\/TrackDuration>/)
   assert.match(pi.text, /<RelTime>0:00:0[23]<\/RelTime>/)
 
   // Phone pauses -> TV's next poll gets it (acknowledging seq 1)
-  const poll2P = req('GET', `/tv/poll?after=${poll.commands[0].seq}`)
+  const poll2P = req('GET', `/tv/poll?client=tv1&role=tv&after=${poll.commands[0].seq}`)
   assert.equal((await soap('avt', 'Pause')).status, 200)
   const poll2 = JSON.parse((await poll2P).text)
   assert.deepEqual(poll2.commands.map(c => c.cmd), ['pause'])
 
   // Seek
-  const poll3P = req('GET', `/tv/poll?after=${poll2.commands[0].seq}`)
+  const poll3P = req('GET', `/tv/poll?client=tv1&role=tv&after=${poll2.commands[0].seq}`)
   await soap('avt', 'Seek', '<Unit>REL_TIME</Unit><Target>0:00:10</Target>')
   const poll3 = JSON.parse((await poll3P).text)
   assert.equal(poll3.commands[0].cmd, 'seek')
   assert.equal(poll3.commands[0].position, 10)
 
   // Ended -> STOPPED and a NOTIFY carrying it
-  await tvPost({ loadId: poll.commands[0].loadId, state: 'ended', position: 15, duration: 15 })
+  await tvPost({ client: 'tv1', role: 'tv', loadId: poll.commands[0].loadId, state: 'ended', position: 15, duration: 15 })
   await new Promise(r => setTimeout(r, 400))
   assert.match((await soap('avt', 'GetTransportInfo')).text, /<CurrentTransportState>STOPPED<\/CurrentTransportState>/)
   assert.ok(notifies.length >= 2, 'initial + change notifies')
@@ -138,10 +142,41 @@ test('TV offline after timeout -> 701 again and STOPPED', async () => {
   assert.match(p.text, /<errorCode>701<\/errorCode>/)
 })
 
+test('browser screen plays when TV is away; TV arrival takes over with startAt', async () => {
+  // web screen online
+  const w1 = JSON.parse((await req('GET', '/tv/poll?client=web1&role=web&after=0')).text)
+  assert.deepEqual(w1.commands.map(c => c.cmd), ['active'])
+  await tvPost({ client: 'web1', role: 'web', state: 'idle' })
+  const wP = req('GET', `/tv/poll?client=web1&role=web&after=${w1.commands[0].seq}`)
+  await soap('avt', 'SetAVTransportURI', '<CurrentURI>http://cdn/b.mp4</CurrentURI><CurrentURIMetaData></CurrentURIMetaData>')
+  const w2 = JSON.parse((await wP).text)
+  assert.equal(w2.commands[0].cmd, 'load')
+  await tvPost({ client: 'web1', role: 'web', loadId: w2.commands[0].loadId, state: 'playing', position: 7, duration: 60 })
+  assert.match((await soap('avt', 'GetTransportInfo')).text, /PLAYING/)
+  // TV appears: gets active + load with startAt≈7; web gets standby
+  const wP2 = req('GET', `/tv/poll?client=web1&role=web&after=${w2.commands[0].seq}`)
+  const t1 = JSON.parse((await req('GET', '/tv/poll?client=tv9&role=tv&after=0')).text)
+  assert.deepEqual(t1.commands.map(c => c.cmd), ['active', 'load'])
+  assert.ok(t1.commands[1].startAt >= 7 && t1.commands[1].startAt < 9, 'resume position carried over: ' + t1.commands[1].startAt)
+  assert.equal(t1.active, true)
+  const w3 = JSON.parse((await wP2).text)
+  assert.deepEqual(w3.commands.map(c => c.cmd), ['standby'])
+  // web's late report is ignored, TV's is trusted
+  await tvPost({ client: 'web1', role: 'web', loadId: w2.commands[0].loadId, state: 'paused', position: 8 })
+  assert.match((await soap('avt', 'GetTransportInfo')).text, /TRANSITIONING/)
+  await tvPost({ client: 'tv9', role: 'tv', loadId: w2.commands[0].loadId, state: 'playing', position: 7.5, duration: 60 })
+  assert.match((await soap('avt', 'GetTransportInfo')).text, /PLAYING/)
+  const st = JSON.parse((await req('GET', '/status')).text)
+  assert.equal(st.tv.active.role, 'tv')
+  await soap('avt', 'Stop')
+})
+
 test('static + ops routes', async () => {
   assert.equal((await req('GET', '/healthz')).status, 200)
   assert.equal((await req('GET', '/tv/info')).status, 200)
   const r = await req('GET', '/')
-  assert.equal(r.status, 302)
+  assert.equal(r.status, 200)
+  assert.match(r.text, /<video/)
+  assert.equal((await req('GET', '/js/app.js')).status, 200)
   assert.equal((await req('GET', '/tv/../package.json')).status, 404)
 })

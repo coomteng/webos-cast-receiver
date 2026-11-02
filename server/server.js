@@ -68,7 +68,14 @@ function createApp({ config } = {}) {
 
   const proxy = createProxy({ userAgent: cfg.proxyUserAgent, mode: cfg.proxyMode, log: vlog })
   let renderer = null
-  const tv = createTvChannel({ timeoutMs: cfg.tvTimeoutMs, log: vlog, onOffline: () => renderer && renderer.onTvOffline() })
+  const tv = createTvChannel({
+    timeoutMs: cfg.tvTimeoutMs, log: vlog,
+    onOffline: () => renderer && renderer.onTvOffline(),
+    // Screen handover (TV came online while a browser was playing, or the
+    // active screen vanished): carry the current item over, resuming near
+    // where the previous screen was.
+    onActiveChange: (next) => { if (next && renderer) renderer.onScreenChanged() },
+  })
   renderer = new Renderer({
     tv,
     log: vlog,
@@ -147,15 +154,15 @@ function createApp({ config } = {}) {
         const info = { ip: req.socket.remoteAddress, ua: req.headers['user-agent'] || '' }
         const respond = obj => sendJson(res, 200, obj)
         req.on('close', () => tv.onDisconnect(respond))
-        return tv.poll({ after: url.searchParams.get('after'), respond, info })
+        return tv.poll({ client: url.searchParams.get('client'), role: url.searchParams.get('role'), after: url.searchParams.get('after'), respond, info })
       }
       if (p === '/tv/state' && m === 'POST') {
         const body = await readBody(req)
         let r = null
         try { r = JSON.parse(body || '{}') } catch (e) { return sendJson(res, 400, { error: 'bad json' }) }
-        tv.report({ ip: req.socket.remoteAddress, name: r.name })
-        renderer.onTvReport(r)
-        return sendJson(res, 200, { ok: true, seq: tv.status().seq })
+        const active = tv.report({ client: r.client, role: r.role, info: { ip: req.socket.remoteAddress, name: r.name } })
+        if (active) renderer.onTvReport(r)
+        return sendJson(res, 200, { ok: true, active, seq: tv.status().seq })
       }
       if (p === '/tv/info') {
         return sendJson(res, 200, { name: cfg.friendlyName, host: cfg.advertiseHost, port: cfg.port, uuid: cfg.uuid, version: require('../package.json').version })
@@ -166,11 +173,13 @@ function createApp({ config } = {}) {
       if (p === '/status') return sendJson(res, 200, { renderer: renderer.snapshot(), tv: tv.status(), name: cfg.friendlyName, base: cfg.base })
 
       // --- static -----------------------------------------------------------
-      if (p === '/' ) { res.writeHead(302, { location: '/sim/' }); return res.end() }
+      // Root = the player page: any browser can act as the screen when the TV is off.
+      if (p === '/' ) return sendFile(res, cfg.appDir, 'index.html')
       if (p === '/sim' || p === '/sim/') return sendFile(res, cfg.simDir, 'index.html')
       if (p.startsWith('/sim/')) return sendFile(res, cfg.simDir, p.slice(5))
       if (p === '/tv' || p === '/tv/') return sendFile(res, cfg.appDir, 'index.html')
       if (p.startsWith('/tv/')) return sendFile(res, cfg.appDir, p.slice(4))
+      if (/^\/(css|js)\//.test(p) || p === '/icon.png' || p === '/largeIcon.png') return sendFile(res, cfg.appDir, p.slice(1))
 
       res.writeHead(404, { 'content-type': 'text/plain' })
       res.end('not found')

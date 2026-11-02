@@ -20,6 +20,14 @@ UDP multicast. A JS service inside the ipk might work on newer firmware but is
 unproven on webOS 4.4, so the socket-side lives on the server and the TV only
 plays.
 
+## Screens: the TV, or any browser
+
+Opening `http://<server>:8790/` in a browser turns that tab into a screen. A
+live TV app always wins; when no TV is connected, the most recent browser tab
+plays instead (muted autoplay fallback until you click the page once). When
+the TV comes back it takes over mid-clip (`load` with `startAt`) and the
+browser drops to standby. `/status` lists the connected screens.
+
 ## Server
 
 ```sh

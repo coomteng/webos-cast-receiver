@@ -9,6 +9,11 @@ var API = (function () {
     ? window.location.protocol + '//' + window.location.host
     : 'http://BRIDGE_HOST:8790';
 
+  /* Screen identity: the LG app is role 'tv' (always wins); a browser tab is role 'web'.
+   * A random per-tab id lets several browser tabs coexist without stealing each other's queue. */
+  var ROLE = /Web0S|WebAppManager/.test(navigator.userAgent) || window.location.protocol === 'file:' ? 'tv' : 'web';
+  var CLIENT = ROLE + '-' + Math.random().toString(36).slice(2, 10);
+
   function request(method, path, body, timeoutMs) {
     return new Promise(function (resolve, reject) {
       var xhr = new XMLHttpRequest();
@@ -37,7 +42,9 @@ var API = (function () {
     base: BASE,
     info: function () { return request('GET', '/tv/info', null, 8000); },
     /* Long poll: server holds up to 25 s; our timeout is a bit longer. */
-    poll: function (after) { return request('GET', '/tv/poll?after=' + encodeURIComponent(after), null, 32000); },
-    state: function (report) { return request('POST', '/tv/state', report, 8000); }
+    role: ROLE,
+    client: CLIENT,
+    poll: function (after) { return request('GET', '/tv/poll?client=' + CLIENT + '&role=' + ROLE + '&after=' + encodeURIComponent(after), null, 32000); },
+    state: function (report) { report.client = CLIENT; report.role = ROLE; return request('POST', '/tv/state', report, 8000); }
   };
 })();
