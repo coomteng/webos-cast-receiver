@@ -19,6 +19,7 @@ var Player = (function () {
   var reportFn = null;
   var osdTimer = null;
   var lastState = 'idle';
+  var terminal = false;   // set after ended/error so the trailing pause event is ignored
   var stallTimer = null;
   var retried = false;
 
@@ -78,12 +79,14 @@ var Player = (function () {
   video.addEventListener('loadedmetadata', function () { report(null); updateOsd(); });
   video.addEventListener('playing', function () { clearStall(); showLoading(false); showIdle(false); report('playing'); showOsd(3000); });
   video.addEventListener('play', function () { report(video.readyState >= 3 ? 'playing' : 'loading'); });
-  video.addEventListener('pause', function () { if (!video.ended && current) { report('paused'); showOsd(0); } });
+  /* readyState < 2 = the element never had data: that pause is the tail of a failed load, not the user. */
+  video.addEventListener('pause', function () { if (!video.ended && !terminal && current && video.readyState >= 2) { report('paused'); showOsd(0); } });
   video.addEventListener('waiting', function () { if (current) { showLoading(true, '缓冲中…'); report('loading'); } });
   video.addEventListener('canplay', function () { showLoading(false); });
   video.addEventListener('timeupdate', function () { if (!osd.classList.contains('hidden')) updateOsd(); });
   video.addEventListener('ended', function () {
     clearStall();
+    terminal = true;
     report('ended');
     App.toast('播放完毕');
     // Keep the last frame for a moment, then back to idle unless something new arrives.
@@ -105,6 +108,7 @@ var Player = (function () {
       return;
     }
     showLoading(false);
+    terminal = true;
     App.toast('无法播放：' + msg, true);
     report('error', { error: msg + ' (' + code + ')' });
     var failed = current;
@@ -116,6 +120,7 @@ var Player = (function () {
   function load(cmd) {
     current = { loadId: cmd.loadId, url: cmd.url, title: cmd.title || '' };
     retried = false;
+    terminal = false;
     osdTitle.textContent = current.title;
     showIdle(false);
     showLoading(true, '正在加载…');

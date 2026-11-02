@@ -214,7 +214,11 @@ class Renderer extends EventEmitter {
     switch (r.state) {
       case 'loading': if (this.uri) this._setState('TRANSITIONING'); break
       case 'playing': this.status = 'OK'; this._setState('PLAYING'); break
-      case 'paused': this._setState('PAUSED_PLAYBACK'); break
+      case 'paused':
+        // A pause arriving in STOPPED/NO_MEDIA (e.g. the element's trailing
+        // pause after error/ended) is not a user pause.
+        if (this.state === 'PLAYING' || this.state === 'TRANSITIONING') this._setState('PAUSED_PLAYBACK')
+        break
       case 'ended':
         // Natural end: position = duration, STOPPED. This LastChange is what
         // tells the phone the clip is over.

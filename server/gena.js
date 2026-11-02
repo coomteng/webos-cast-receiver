@@ -113,7 +113,12 @@ function createGena({ renderer, request, now, setTimeoutFn, clearTimeoutFn, log 
         timeout: 5000,
       }, res => { res.resume() })
       req.on('timeout', () => req.destroy())
-      req.on('error', e => logf('notify failed', sid, cb, e.message))
+      req.on('error', e => {
+        logf('notify failed', sid, cb, e.message)
+        sub.failures = (sub.failures || 0) + 1
+        if (sub.failures >= 3) { subs.delete(sid); logf('dropped dead subscriber', sid) }
+      })
+      req.on('response', () => { sub.failures = 0 })
       req.end(body)
       break // spec: deliver to the first reachable callback; keep it simple
     }
