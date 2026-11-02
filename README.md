@@ -45,6 +45,10 @@ actions fail with UPnP 701 instead of pretending.
 
 ## TV app
 
+A prebuilt ipk for the author's LAN (server at 192.168.0.9:8790) is attached to
+each [GitHub release](https://github.com/coomteng/webos-cast-receiver/releases);
+for any other network build your own as below.
+
 `app/` is plain ES5 + flexbox (webOS 4.4 = Chrome 53; one ES2015 token kills the
 script). `tools/es5check.sh` gates it with acorn. Keys: OK/Play/Pause toggle,
 ←/→ ±10 s, ⏪/⏩ ±30 s, Stop/Back stop, Back again exits. Magic Remote: click
