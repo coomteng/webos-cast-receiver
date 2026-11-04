@@ -126,6 +126,13 @@ var Player = (function () {
 
   /* ---- commands ---- */
   function load(cmd) {
+    /* Douyin sends Stop ~30 ms before the next SetAVTransportURI. Tearing the
+       source down on Stop and again here makes webOS 4.4 release and re-acquire
+       the hardware decoder (~0.4-0.8 s before the new source is even opened).
+       So: Stop only pauses and arms a deferred teardown; a load arriving in
+       time cancels it and simply swaps src. Measured on OLED55B8 via CDP:
+       load -> first byte request 1.35 s -> ~0.8 s. */
+    cancelTeardown();
     current = { loadId: cmd.loadId, url: cmd.url, title: cmd.title || '' };
     retried = false;
     terminal = false;
@@ -134,8 +141,6 @@ var Player = (function () {
     showLoading(true, '正在加载…');
     osd.classList.add('hidden');
     try { video.pause(); } catch (e) { /* ignore */ }
-    video.removeAttribute('src');
-    try { video.load(); } catch (e2) { /* ignore */ }
     video.src = cmd.url;
     video.load();
     report('loading');
@@ -180,13 +185,23 @@ var Player = (function () {
 
   function pause() { if (!current) return; video.pause(); }
 
+  var teardownTimer = null;
+  var TEARDOWN_DELAY_MS = 400;
+  function cancelTeardown() { if (teardownTimer) { clearTimeout(teardownTimer); teardownTimer = null; } }
+  function teardown() {
+    teardownTimer = null;
+    video.removeAttribute('src');
+    try { video.load(); } catch (e) { /* ignore */ }
+  }
+
   function stop(silent) {
     clearStall();
     var had = !!current;
     current = null;
     try { video.pause(); } catch (e) { /* ignore */ }
-    video.removeAttribute('src');
-    try { video.load(); } catch (e2) { /* ignore */ }
+    // Release the decoder only if no new load follows shortly (see load()).
+    cancelTeardown();
+    teardownTimer = setTimeout(teardown, TEARDOWN_DELAY_MS);
     if (needsUnmute) { needsUnmute = false; App.showUnmute(false); }
     showIdle(true);
     if (had && !silent) report('stopped');
