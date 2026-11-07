@@ -1,5 +1,12 @@
 # webos-cast-receiver
 
+> **DEPRECATED (2026-11-07)** — superseded by
+> [coomteng/webos-cast-receiver-rs](https://github.com/coomteng/webos-cast-receiver-rs),
+> which now contains the server (Rust), the TV app `app/`, the simulator `sim/`
+> and the packaging tools. This repository is archived and kept for history;
+> the last TV app built from here (v0.2.3) is byte-identical to the one in the
+> Rust repo, so an installed `com.ting.cast` keeps working unchanged.
+
 A zero-dependency DLNA **MediaRenderer** that lives on a LAN server and relays
 casts to a tiny web app on an LG webOS TV. Built so the 抖音 (Douyin) "投屏 TV"
 button — and anything else that speaks DLNA/UPnP AVTransport — lands reliably on
